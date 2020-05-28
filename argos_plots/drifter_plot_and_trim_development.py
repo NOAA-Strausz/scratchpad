@@ -14,21 +14,27 @@ import cmocean
 #for calculating distance
 from haversine import haversine
 import argparse
-
+from datetime import datetime
 
 
 
 parser = argparse.ArgumentParser(description='Plot drifter track on map')
 parser.add_argument('infile', type=str, help='full path to input file')
+parser.add_argument('-t', '--temp', action="store_true", 
+                    help="make plot of surface temperature")
+parser.add_argument('-s', '--strain', action="store_true",
+                    help="make plot of drogue strain")
+parser.add_argument('-d', '--date', action="store_true",
+                    help="add occasional date to track")
+parser.add_argument('-c', '--cut', nargs=2, 
+                    type=lambda x: datetime.strptime(x, "%Y-%m-%dT%H:%M:%S"),
+                    help="date span in format '2019-01-01T00:00:00 2019-01-01T00:00:01' for example")
 args=parser.parse_args()
 
 
 
 
 filename=args.infile
-
-
-
 
 
 df = pd.read_csv(filename)
@@ -61,7 +67,14 @@ ax = plt.axes(projection=proj)
 ax.natural_earth_shp(name='land', resolution='50m' )
 ax.coastlines(resolution='50m')
 
-ax.set_extent([170, -150, 50, 75])
+#auto find extents
+nlat = df.latitude.max() + 5
+slat = df.latitude.min() - 5
+wlon = df.longitude.max() - 20
+elon = df.longitude.min() + 20
+
+extents = [wlon, elon, slat, nlat]
+ax.set_extent(extents)
 
 #t = ax.scatter(df['longitude'], df['latitude'], s=5, c=df.sst, transform=ccrs.PlateCarree(), 
 #               cmap=cmocean.cm.thermal, vmin=-2, vmax=10 )
@@ -147,5 +160,6 @@ df_hour['speed'] = df_hour.dist * 100000 / df_hour.seconds
 
 ax.scatter(df_hour['longitude'], df_hour['latitude'], s=10, c=df_hour.speed, transform=ccrs.PlateCarree(), 
                cmap=cmocean.cm.speed, vmin=0, vmax=120 )
+
 
 #ax.text(-165, 65, 'boogers', transform=ccrs.PlateCarree())
