@@ -20,6 +20,7 @@ fig = plt.figure(figsize=(10,10))
 ax = plt.axes(projection=proj)
 ax.natural_earth_shp(name='land', resolution='50m' )
 ax.coastlines(resolution='50m')
+ax.set_title("OS1901 SST")
 wlon = 180
 elon = -150
 slat = 51
@@ -35,3 +36,5 @@ hull_temp = ax.scatter(df['longitude'], df['latitude'], s=10, c=df.hull_temp, tr
                cmap=cmocean.cm.thermal, vmin=0, vmax=15 )
 
 plt.colorbar(hull_temp)
+
+fig.savefig('sst_map.png')
