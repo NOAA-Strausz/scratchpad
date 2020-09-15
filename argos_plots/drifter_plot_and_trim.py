@@ -20,6 +20,7 @@ import re
 from erddapy import ERDDAP
 
 
+
 parser = argparse.ArgumentParser(description='Plot drifter track on map')
 parser.add_argument('-if','--infile', nargs=1, type=str, 
                     help='full path to input file')
@@ -39,9 +40,11 @@ parser.add_argument('-H', '--hour', action="store_true",
                     help="resample all data to even hour and interpolate")
 parser.add_argument('-s', '--speed', action="store_true",
                     help="add speed column")
+parser.add_argument('-V', '--vecdis', action="store_true",
+                    help="import a vecdis file as input")
 parser.add_argument('-l', '--legacy', nargs='?',
                     help="file has legacy format from ecofoci website, if file contains ice concentraion, add 'i'")
-parser.add_argument('-c', '--cut', nargs=2,
+parser.add_argument('-c', '--cut', nargs='+',
                     type=lambda x: datetime.strptime(x, "%Y-%m-%dT%H:%M:%S"),
                     help="date span in format '2019-01-01T00:00:00 2019-01-01T00:00:01' for example")
 parser.add_argument('-de', '--despike', action="store_true",
@@ -149,9 +152,51 @@ def plot_variable(dfin, var, filename):
 
 def trim_data(df, delta_t):
     start = delta_t[0].strftime('%Y-%m-%d %H:%M:%S')
-    end   = delta_t[1].strftime('%Y-%m-%d %H:%M:%S')
-    return df[start:end]
+    if len(delta_t) > 1:
+        end = delta_t[1].strftime('%Y-%m-%d %H:%M:%S')
+        return df[start:end]
+    else: 
+        return df[start:]
 
+def speed(df):
+       df['time'] = df.index
+       df['next_lat'] = df.latitude.shift(-1)
+       df['next_lon'] = df.longitude.shift(-1)
+       #then calculate distance between points with the haversine function
+       df['dist'] = df.apply(lambda x: haversine((x.latitude, x.longitude), (x.next_lat, x.next_lon)), axis=1)
+       df['dist_U'] = df.apply(lambda x: haversine((x.latitude, x.longitude), (x.latitude, x.next_lon)), axis=1)
+       df['dist_V'] = df.apply(lambda x: haversine((x.latitude, x.longitude), (x.next_lat, x.longitude)), axis=1)
+       
+       #next shift up the 'dist' column
+       df.dist.shift()
+       #now calculate the time difference
+       
+       df['time2'] = df.time.shift(-1)
+       #make the time_delta
+       df['time_delta'] = df.time2 - df.time
+       #now make new column of seconds
+       df['seconds'] = df.time_delta.dt.total_seconds()
+       #now calculate speed in cm/s
+       df['speed'] = df.dist * 100000 / df.seconds
+       df['U'] = df.dist_U * 100000 / df.seconds
+       df['V'] = df.dist_V * 100000 / df.seconds
+       df['speed_check'] = (df.U**2 + df.V**2)**(1/2)
+       #df['trajectory_id'] = df.trajectory_id.astype(int)
+       #now calculate bearing btw the two points using formula found on 
+       #http://www.movable-type.co.uk/scripts/latlong.html
+       df['bearing'] = np.degrees(np.arctan2(np.sin(np.radians(df.next_lon - df.longitude) 
+                                         * np.cos(np.radians(df.next_lat))),
+                                  np.cos(np.radians(df.latitude))*np.sin(np.radians(df.next_lat))
+                                  -np.sin(np.radians(df.latitude)) * np.cos(np.radians(df.next_lat))
+                                  * np.cos(np.radians(df.next_lon - df.longitude))))
+       df['bearing'] = (df.bearing + 360) % 360
+       return df
+def hour(df):
+    df_hour=df.resample('H').mean()
+    
+    #use linear interpolation to fill in gaps
+    df_hour.interpolate(inplace=True, limit=12)
+    return df_hour
 
 if args.erddap:
     drifter_years = args.erddap[1:]
@@ -202,6 +247,22 @@ elif args.legacy:
     df.set_index(['datetime'], inplace=True)
     trajectory_id=re.search(r'(\d{5,})', filename).group(0)
     df['trajectory_id']=trajectory_id
+
+elif args.vecdis:
+    names = ['year','day','time','latitude','longitude', 'speed', 'direction', 'U', 'V']
+    dtypes = {'year':str, 'day':str, 'time':str}
+    dateparser = lambda x: pd.datetime.strptime(x, "%Y%j%H%M")
+    df=pd.read_csv(filename, sep='\s+', skiprows=2, header=0, names=names,
+                   dtype=dtypes)
+    #to make W longitude negative and E positive
+    df['time'] = df.time.str.zfill(4)
+    df['datetime'] = pd.to_datetime((df.year+df.day+df.time), format="%Y%j%H%M")
+    df['longitude'] = df.longitude.apply(lambda x: x*-1+360 if x >= 180 else x * -1)
+    df.set_index(['datetime'], inplace=True)
+    trajectory_id=re.search(r'(\d{5,})', filename).group(0)
+    df['trajectory_id']=trajectory_id
+    df['speed2'] =(df.U**2 + df.V**2)**(1/2)
+    #calculate overall speed
     
 else:
     df = pd.read_csv(filename)
@@ -217,31 +278,11 @@ if args.cut:
     df = trim_data(df, args.cut)
 
 if args.hour: #resample data to on an even hour
-    df_hour=df.resample('H').mean()
-    
-    #use linear interpolation to fill in gaps
-    df_hour.interpolate(inplace=True, limit=12)
-    df = df_hour
+    df_hour = hour(df)    
 
 if args.speed: #now calculate distance for drifter speed calculation
-    df_hour['time'] = df_hour.index
-    df_hour['next_lat'] = df_hour.latitude.shift(-1)
-    df_hour['next_lon'] = df_hour.longitude.shift(-1)
-    #then calculate distance between points with the haversine function
-    df_hour['dist'] = df_hour.apply(lambda x: haversine((x.latitude, x.longitude), (x.next_lat, x.next_lon)), axis=1)
-    #next shift up the 'dist' column
-    df_hour.dist.shift()
-    #now calculate the time difference
     
-    df_hour['time2'] = df_hour.time.shift(-1)
-    #make the time_delta
-    df_hour['time_delta'] = df_hour.time2 - df_hour.time
-    #now make new column of seconds
-    df_hour['seconds'] = df_hour.time_delta.dt.total_seconds()
-    #now calculate speed in m/s
-    df_hour['speed'] = df_hour.dist * 100000 / df_hour.seconds
-    df_hour['trajectory_id'] = df_hour.trajectory_id.astype(int)
-
+    df_speed = speed(df_hour)
 #now can do plotting stuff if selected
 if args.ice:
     df_hour['lon_360'] = df_hour.apply(lambda x: lon_360(x.longitude), axis=1)
@@ -297,8 +338,13 @@ if args.plot:
     fig.savefig(plot_file)
 
 if args.file:
-    df_out = df[['trajectory_id','latitude','longitude','sst','strain','voltage','speed']]
-    df_out = df_out.round({'latitude':3, 'longitude':3,'sst':2,'strain':1,'voltage':1,'speed':1})
+    if args.hour:
+        df_out = df_hour
+        #df_out = df[['trajectory_id','latitude','longitude','sst','strain','voltage','speed']]
+        #df_out = df_out.round({'latitude':3, 'longitude':3,'sst':2,'strain':1,'voltage':1,'speed':1})
+    else:
+        df_out = df
+    
     if args.cut:
         outfile = str(df_out.trajectory_id[0]) + '_trimmed.csv'
     else:
@@ -307,15 +353,66 @@ if args.file:
 
 if args.despike:
     #create empty df
-    df_ds = pd.DataFrame()
+    
+    df['sst_pass1'] = df.sst
+    df['sst_pass2'] = df.sst
     #group by day first
-    grouped = df.groupby(df.index.date)
-    for name, group in grouped:
-        print(group)
-        despiked = group[(group.sst < group.sst.mean() + group.sst.std()*3) & (group.sst > group.sst.mean() - group.sst.std()*3) ]
-        df_ds = pd.concat([df_ds, despiked])
-        #df_ds = pd.concat(group[(group.sst < group.sst.mean() + group.sst.std()*2) & (group.sst > group.sst.mean() - group.sst.std()*2) ])   
+    #grouped = df.groupby(df.index.date)
+    #group by given number of rows
+    #first drop obvious spikes
+    df_orig = df
+    numrows = 50
+    pass1_array = np.arange(len(df)) // 50
+    pass2_array = pass1_array[25:]
+    last_group = len(df) // 50
+    end_array = np.arange(25)*0+last_group
+    pass2_array = np.append(pass2_array, end_array)
+    pd.set_option('display.max.row', None)
+    def remove_spikes(df, array, var):
+        #first remove obvious spikes
+        df.loc[(df[var] > 18) | (df[var] < -2.6), var] = np.nan
+        df_ds = pd.DataFrame()
+        grouped = df.groupby(array)
         
+        argos_id = str(df.trajectory_id[0])
+        
+        f = open(argos_id + "_despiked_" + var + ".log", 'w')
+        for name, group in grouped:
+            f.write("Standard deviation for SST: ")
+            f.write(str(round(group[var].std(),3))+"\n")
+            f.write("Mean of SST: ") 
+            f.write(str(round(group[var].mean(),3))+"\n")
+            
+            #try using loc to set to nan
+            #ie df.loc[df.sst>10, 'sst']=np.nan
+            upper = group[var].mean() + group[var].std()*2
+            lower = group[var].mean() - group[var].std()*2
+            f.write("Removed any values > " + str(round(upper, 3)) + " or < "
+                    + str(round(lower, 3)) + "\n")
+            group.loc[(group[var] > upper) | (group[var] < lower), var] = np.nan
+            #print(group[['sst', 'sst_orig']])
+            f.write("Number of spikes removed: ")
+            f.write(str(group[var].isna().sum())+"\n")
+            f.write(group[['sst', var]].to_string())
+            f.write("\n----------------------------------------------------\n")
+            #despiked = group[(group.sst < group.sst.mean() + group.sst.std()*3) & (group.sst > group.sst.mean() - group.sst.std()*3) ]
+            df_ds = pd.concat([df_ds, group])
+            #df_ds = pd.concat(group[(group.sst < group.sst.mean() + group.sst.std()*2) & (group.sst > group.sst.mean() - group.sst.std()*2) ])   
+        pd.set_option('display.max.row', 10)
+        f.write("Total Number of spikes removed: ")
+        f.write(str(df_ds.sst.isna().sum()))
+        f.close()
+        return df_ds
+    df_ds = remove_spikes(df, pass1_array, 'sst_pass1')
+    df_ds = remove_spikes(df_ds, pass2_array, 'sst_pass2')
+    df_ds['sst_combined'] = df_ds['sst_pass1'].combine_first(df_ds["sst_pass2"])
+    #reorder columns so the print nicely
+    df_ds = df_ds[['trajectory_id', 'latitude', 'longitude', 'strain', 'voltage', 'sst', 'sst_pass1', 'sst_pass2', 'sst_combined']]
+    argos_id = str(df.trajectory_id[0])
+    f = open(argos_id + "_despiked_full_.log", 'w')
+    f.write(df_ds.to_string())
+    f.close()
+    pd.set_option('display.max.row', 10)
 if args.phyllis:
     df_hour['doy'] = df_hour.index.strftime('%j')
     df_hour['hour'] = df_hour.index.strftime('%H')
@@ -325,4 +422,6 @@ if args.phyllis:
     df_phy = df_phy.round({'latitude':3,'longitude':3})
     outfile = str(df_hour.trajectory_id[0]) + '_for_phyllis.csv'
     df_phy.to_csv(outfile, sep=" ", index=False)
+    
+
     
