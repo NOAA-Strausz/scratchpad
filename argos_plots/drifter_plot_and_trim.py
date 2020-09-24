@@ -18,6 +18,7 @@ from datetime import datetime
 import numpy as np
 import re
 from erddapy import ERDDAP
+import mysql.connector
 
 
 
@@ -44,7 +45,7 @@ parser.add_argument('-V', '--vecdis', action="store_true",
                     help="import a vecdis file as input")
 parser.add_argument('-l', '--legacy', nargs='?',
                     help="file has legacy format from ecofoci website, if file contains ice concentraion, add 'i'")
-parser.add_argument('-c', '--cut', nargs='+',
+parser.add_argument('-c', '--cut', nargs='*',
                     type=lambda x: datetime.strptime(x, "%Y-%m-%dT%H:%M:%S"),
                     help="date span in format '2019-01-01T00:00:00 2019-01-01T00:00:01' for example")
 parser.add_argument('-de', '--despike', action="store_true",
@@ -151,12 +152,37 @@ def plot_variable(dfin, var, filename):
     return fig, ax, filename
 
 def trim_data(df, delta_t):
-    start = delta_t[0].strftime('%Y-%m-%d %H:%M:%S')
-    if len(delta_t) > 1:
+    
+    if len(delta_t) == 0:
+        try:
+            print("Trying to set start time from database .....")
+            drifter_db = mysql.connector.connect(user='viewer', host='127.0.0.1', 
+                                         database='ecofoci_drifters')
+            cursor = drifter_db.cursor()
+            argos_id = str(df.trajectory_id[0])
+            query_string = "select releasedate from drifter_ids where argosnumber=" + argos_id + " and isactive='Y'"
+            #print(query_string)
+            query = (query_string)
+            cursor.execute(query)
+    
+            results = cursor.fetchone()
+            
+            start = results[0].strftime('%Y-%m-%d %H:%M:%S')
+            drifter_db.close()
+            print("Drifter",argos_id,"start time is",start)
+            return df[start:]
+        except:
+             print("Database not available!")
+    elif len(delta_t) == 1:
+        start = delta_t[0].strftime('%Y-%m-%d %H:%M:%S')
+        return df[start:]
+    elif len(delta_t) == 2:
+        start = delta_t[0].strftime('%Y-%m-%d %H:%M:%S')
         end = delta_t[1].strftime('%Y-%m-%d %H:%M:%S')
         return df[start:end]
-    else: 
-        return df[start:]
+    else:
+        quit("Too many cut arguments!")
+    
 
 def speed(df):
        df['time'] = df.index
@@ -274,7 +300,8 @@ else:
     df.drop(columns=['year_doy_hhmm','year_doy_hhmm.1'], inplace=True)
     df['longitude'] = df.longitude * -1
 
-if args.cut:
+if args.cut or args.cut == []:
+    
     df = trim_data(df, args.cut)
 
 if args.hour: #resample data to on an even hour
