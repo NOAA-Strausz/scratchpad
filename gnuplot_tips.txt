@@ -1,0 +1,80 @@
+Gnuplot Tips
+
+
+Here's a simple one liner:
+To make a basic plot of a csv file.  This one plots the 4th column.
+gnuplot -p -e "plot \"file.csv\" using 4 with lines"
+
+
+
+For more complicated things you can start gnuplot and run a few quick commands.
+For redhat, the system gnuplot is and older version 4.x.  Using miniconda's version,
+which is 5.x gets better results.  Only problem is that it defaults to the qt terminal, which
+doesn't appear to work.  So first set the terminal to x11 or whatever you want.
+set terminal
+the above shows what terminals are available
+set terminal x11
+this sets the termial to x11, which works well
+
+Here's an example for plotting a Wetlabs Triplet's data in 3 plots:
+First set date format for first column:
+set xdata time
+set timefmt "%m/%d/%y %H:%M:%S"
+plot '18ckp2a_bbfl2wb_1307_39.25m.txt' using 1:(.0516*($4-50)) with lines
+plot '18ckp2a_bbfl2wb_1307_39.25m.txt' using 1:(.0186*($6-54)) with lines
+plot '18ckp2a_bbfl2wb_1307_39.25m.txt' using 1:(.0864*($8-48)) with lines
+
+This plots turbidity, chlorophyll, and cdom in separate plots.  Note how calibration
+equation is applied to the columns.
+
+
+If spikes make range too big, you can set the range like this:
+
+set yrange [0:20]
+
+you can also set the xrange:
+
+set xrange ["07/1/18 00:00:00":"07/2/19 12:00:00"]
+
+You can use only date also.
+
+set xrange ["08/1/18":"05/1/19"]
+
+set title with following
+
+set title "example" 
+
+can put at end of plot
+
+to make a few plots on the same chart, do something like the following:
+
+plot '18ckp1a_sbe16_6592_39.cnv' skip 436 using 6 with lines title "18ckp1a",'18ckp2a_sbe16_6826_39.25m_3600.edit.cnv' skip 150 using 9 with lines title "18ckp2a", '18ckp3a_sbe16_6902_42.25m.cnv' skip 150 using 9 with lines title "18ckp3a", '18ckp4a_sbe16_6627_44.5m.cnv' skip 432 using 6 with lines title "18ckp4a", '18ckp5a_sbe16_6628_39.cnv' skip 432 using 6 with lines title "18ckp5a"
+
+Some tips on plotting SBE-39s or 37s:
+
+The date and time span two lines for these instruments, but that is not a problem
+you can do something like this:
+
+set timefmt " %d %b %Y, %H:%M:%S"
+
+now you can plot:
+
+plot '18bs4b_sbe37_3770_55m.asc' skip 61 using 5:4 with lines notitle
+
+So the 5:4 means use column 5 for x, and 4 for y.  Column 5 is where the date
+starts.  The formatting of the x axis might be unlegible, so you can format it
+with something like this:
+
+set format x "%m/%Y"
+
+That will just do the month and the full year.  
+
+Remember that 'skip' skips the big header that is in most seabird files, in this 
+case the first 61 lines.  
+
+for something like an sbe56 which has time as seconds since 2000, you can plot via the following:
+
+plot 'SBE05604621_2020-10-09.cnv' skip 86 using ($1+946684800):2
+
+946684800 is the amount of seconds from jan 1 1970 to jan 1 2000.  Since %s is from 1970 you need to add
+the seconds.  FYI
