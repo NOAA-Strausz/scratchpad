@@ -78,3 +78,7 @@ plot 'SBE05604621_2020-10-09.cnv' skip 86 using ($1+946684800):2
 
 946684800 is the amount of seconds from jan 1 1970 to jan 1 2000.  Since %s is from 1970 you need to add
 the seconds.  FYI
+
+
+You can manually change the color by adding "lt rgb "sea-gree"" for example at the
+end of a plot command.
