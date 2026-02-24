@@ -16,9 +16,10 @@ dist=20
 
 #points of desired data
 
-kotz = {'KS08':[66.935175,-163.824225], 'KS04':[66.61012917,-163.6313292],
-                'KS01':[67.0714625,-163.7723917], 'KS02':[66.78301667,-163.7495125],
-                'KS03':[66.683175,-164.4552458], 'KS07':[66.23546667,-162.2614]}
+# ~ kotz = {'KS08':[66.935175,-163.824225], 'KS04':[66.61012917,-163.6313292],
+                # ~ 'KS01':[67.0714625,-163.7723917], 'KS02':[66.78301667,-163.7495125],
+                # ~ 'KS03':[66.683175,-164.4552458], 'KS07':[66.23546667,-162.2614]}
+kotz = {'KS04':[66.61012917,-163.6313292]}
 
 def find_box(lat1, lon1, dist, nm):
         
@@ -154,7 +155,9 @@ for key, value in kotz.items():
                 'sea_ice_concentration': flat_ice}
                 
             df_ice = pd.DataFrame(build_dataframe)
-            
+
+            #now set all land values, etc to nan
+            df_ice.loc[df_ice['sea_ice_concentration'] > 1.0, 'sea_ice_concentration'] = np.nan
                 
             nlat, slat, wlon, elon = find_box(target_lat, target_lon, dist, nm='')
             
